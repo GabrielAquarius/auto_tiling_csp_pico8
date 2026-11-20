@@ -1,0 +1,12 @@
+• blk (blocos): quantidade de células de terra (1) atualmente presentes no mapa (metricas.blocos / #cache_grama).
+• rom (memória estática do cartucho / sprite sheet): o espaço fixo ocupado pelos gráficos em __gfx__. Aparece como rom:160b(-89%) ao lado da ram justamente para destacar o trade-off do projeto:
+    • 160b = 5 sprites × 32 bytes na sprite sheet (de 8 KB totais).
+    • -89% = redução frente aos 47 tiles desenhados manualmente (1.504 bytes).
+• ram: memória dinâmica Lua usada agora (stat(0)) de 2048k (2 MB) disponíveis.
+• cpu: % de 1 frame gasto no momento (stat(1)).
+• fps: quadros por segundo atuais (stat(7)).
+• solve: % de 1 frame que a última execução de resolver_csp levou.
+• runs: quantas vezes o Solver já executou (incrementa a cada edição ao vivo).
+• sspr: total de recortes (bordas + quinas) ativos no mapa.
+• cstr: total de restrições avaliadas (blk * 12).
+• draw calls: total de desenhos por frame (blk blocos base spr + sspr recortes).
