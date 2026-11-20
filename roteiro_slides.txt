@@ -1,0 +1,177 @@
+================================================================================
+ROTEIRO DE SLIDES — AUTO-TILING COMPOSICIONAL COM PROGRAMAÇÃO POR RESTRIÇÕES
+Plataforma: PICO-8 | Disciplina: Programação por Restrições
+================================================================================
+
+--------------------------------------------------------------------------------
+SLIDE 1 — CAPA
+--------------------------------------------------------------------------------
+Título:
+Auto-Tiling Composicional com Programação por Restrições no PICO-8
+
+Subtítulo:
+Reduzindo o consumo de memória estática de sprite sheets por meio de um Solver CSP
+
+Metadados:
+Disciplina: Programação por Restrições
+Equipe: Gabriel Loiola de Alencar Dantas /  Luiza Isabelle da Silva Nepomuceno
+
+
+--------------------------------------------------------------------------------
+SLIDE 2 — O PROBLEMA: EXPLOSÃO COMBINATÓRIA DE TILES
+--------------------------------------------------------------------------------
+- Em jogos 2D, um único tipo de terreno precisa se adaptar visualmente aos seus
+  8 vizinhos (4 cardeais + 4 diagonais).
+- Espaço bruto: 2^8 = 256 combinações possíveis de vizinhança.
+- Padrão clássico (Blob Tileset): mesmo eliminando casos redundantes, ainda
+  exige 47 sprites únicos desenhados à mão para cada bioma.
+- O gargalo no PICO-8: a sprite sheet tem apenas 128x128 pixels (256 sprites
+  de 8x8 = 8 KB totais, sendo metade compartilhada com o mapa).
+- Pergunta central: Como representar todas as 47 variações de terreno sem
+  sacrificar a memória estática de sprites?
+
+
+--------------------------------------------------------------------------------
+SLIDE 3 — A IDEIA DA SOLUÇÃO: DECOMPOSIÇÃO + CSP
+--------------------------------------------------------------------------------
+- Em vez de armazenar cada combinação pronta na sprite sheet, decompomos o tile
+  em micro-peças independentes:
+  * 1 sprite base: terra sólida (sprite #0).
+  * 12 recortes (micro-peças) empacotados em apenas 4 sprites (#1 a #4):
+    - 4 bordas retas (top, bottom, left, right)
+    - 4 quinas internas (tl_in, tr_in, bl_in, br_in)
+    - 4 quinas externas (tl_out, tr_out, bl_out, br_out)
+- Um Solver CSP lê a matriz lógica do cenário (0 = ar, 1 = terra) e infere
+  automaticamente qual combinação ordenada de recortes compõe cada bloco.
+
+
+--------------------------------------------------------------------------------
+SLIDE 4 — MODELAGEM FORMAL COMO CSP <X, D, C>
+--------------------------------------------------------------------------------
+Para cada célula sólida (x, y) do mapa:
+
+- Variáveis (X):
+  * 12 variáveis de decisão binárias que indicam se cada micro-peça será
+    aplicada naquela célula:
+    - Bordas:          {B_N, B_S, B_O, B_L}
+    - Quinas Internas: {QI_NO, QI_NE, QI_SO, QI_SE}
+    - Quinas Externas: {QE_NO, QE_NE, QE_SO, QE_SE}
+  * Entradas observadas (fixadas pelo mapa):
+    os 8 vizinhos {n, s, o, l, no, ne, so, se} em {0, 1}.
+
+- Domínios (D):
+  * D_p = {0, 1} (ausente / presente) para cada uma das 12 peças.
+  * Espaço combinatório sem restrições: 2^12 = 4.096 composições possíveis por
+    célula.
+
+- Restrições (C):
+  * Regras lógicas de consistência espacial e de ordem de sobreposição
+    (z-order) que podam o espaço exatamente para as 47 configurações
+    visualmente válidas.
+
+
+--------------------------------------------------------------------------------
+SLIDE 5 — AS RESTRIÇÕES IMPLEMENTADAS NO SOLVER
+--------------------------------------------------------------------------------
+As restrições são organizadas em 3 camadas hierárquicas:
+
+1. Camada 1 — Restrições Unárias de Fronteira (Bordas):
+   B_d = 1  <=>  v_d = 0   (para d em {N, S, O, L})
+   * Só há borda de grama onde a terra encontra o ar.
+
+2. Camada 2 — Restrições Ternárias e Sanitização de Diagonais (Quinas Internas):
+   QI_NO = 1  <=>  (n = 1  E  o = 1  E  no = 0)
+   (e regras análogas para NE, SO e SE)
+   * Garante consistência geométrica: uma quina interna só pode existir se os
+     dois cardeais adjacentes forem terra e a diagonal entre eles for ar.
+
+3. Camada 3 — Restrições Binárias de Fechamento (Quinas Externas):
+   QE_NO = 1  <=>  (n = 0  E  o = 0)
+   (e regras análogas para NE, SO e SE)
+   * Restrição de precedência (Z-Order):
+     Terra < Camada 1 (Bordas) < Camada 2 (Quinas Internas) < Camada 3 (Quinas Externas)
+     garantindo acabamento limpo sobre a junção de duas bordas retas.
+
+
+--------------------------------------------------------------------------------
+SLIDE 6 — ESTRATÉGIA DE RESOLUÇÃO E COMPLEXIDADE
+--------------------------------------------------------------------------------
+- Por que não há backtracking neste Solver?
+  * Como o mapa binário (terra/ar) já está instanciado, o problema se resolve
+    por propagação direta de restrições (consistência local determinística).
+  * A boa escolha da representação (variáveis composicionais ortogonais)
+    elimina conflitos e transforma um espaço combinatório em um solver de
+    complexidade linear: O(W * H).
+
+- Separação entre Resolução e Renderização (Cache):
+  * O CSP é resolvido uma única vez em _init() e armazenado em cache_grama.
+  * No loop de jogo (_draw()), apenas renderizamos os recortes já resolvidos
+    via sspr().
+
+[Nota para fala oral]
+Caso questionado sobre onde entraria backtracking: se o mapa NÃO viesse pronto
+e o objetivo fosse gerar o cenário proceduralmente (como em Wave Function
+Collapse), as variáveis de vizinhança ficariam abertas e exigiriam propagação
+iterativa + backtracking.
+
+
+--------------------------------------------------------------------------------
+SLIDE 7 — GANHO EM MEMÓRIA ESTÁTICA NA SPRITE SHEET
+--------------------------------------------------------------------------------
+No PICO-8, cada pixel ocupa 4 bits (16 cores), logo 1 sprite (8x8) = 32 bytes.
+Sprite sheet completa: 256 sprites = 8.192 bytes (8 KB)
+(apenas 128 sprites / 4 KB exclusivos, não compartilhados com o mapa).
+
+Comparativo por bioma:
+- Força bruta (2^8 combinações):
+  256 sprites | 8.192 bytes | 100,0% da sheet total | Excede área exclusiva (200%)
+- Manual clássico (Blob 47 tiles):
+   47 sprites | 1.504 bytes |  18,4% da sheet total |  36,7% da área exclusiva
+- Auto-Tiling CSP (Este Projeto):
+    5 sprites |   160 bytes |   1,95% da sheet total |   3,9% da área exclusiva
+
+Economia real obtida:
+- vs. Blob clássico (47 tiles): 1.344 bytes economizados -> redução de 89,4% (9,4x menor)
+- vs. Força bruta (256 tiles):  8.032 bytes economizados -> redução de 98,0% (51,2x menor)
+
+Escalabilidade com múltiplos biomas (ex.: grama, neve, pedra):
+- Manual (47 tiles): 3 x 47 = 141 sprites (4.512 bytes -> invade a memória do mapa!)
+- CSP (5 sprites):   3 x  5 =  15 sprites (  480 bytes -> apenas 5,9% da sprite sheet)
+
+
+--------------------------------------------------------------------------------
+SLIDE 8 — TRADE-OFF ARQUITETURAL: ROM ESTÁTICA vs. RAM / CPU
+--------------------------------------------------------------------------------
+A solução troca um recurso extremamente escasso por recursos abundantes:
+
+- O que economizamos (recurso escasso):
+  * Memória estática de gráficos (GFX): apenas 8 KB no PICO-8.
+  * Esforço artístico: desenhar 5 sprites em vez de 47 por tipo de terreno.
+
+- O que pagamos (recursos abundantes):
+  * RAM dinâmica (Lua): o PICO-8 dispõe de 2 MB (2.048 KB) de RAM Lua — o
+    cache_grama ocupa uma fração mínima desse limite.
+  * CPU no _draw(): múltiplas chamadas sspr() por tile visível, com impacto
+    baixo mantendo 30/60 FPS estáveis.
+
+
+--------------------------------------------------------------------------------
+SLIDE 9 — CONCLUSÃO E TRABALHOS FUTUROS
+--------------------------------------------------------------------------------
+- Conclusão:
+  A modelagem por restrições permitiu substituir 47 sprites pré-desenhados por
+  5 sprites + 12 regras lógicas, reduzindo em 89,4% o uso da sprite sheet com
+  resolução em tempo linear O(W * H).
+
+- Trabalhos futuros / extensões:
+  * Múltiplos materiais com restrições de transição (grama <-> pedra <-> água).
+  * Atualização incremental (recalcular apenas a vizinhança 3x3 alterada).
+  * Integração com backtracking / Wave Function Collapse para geração procedural.
+
+================================================================================
+DEMO AO VIVO NO PICO-8 (APÓS OS SLIDES CONCEITUAIS)
+================================================================================
+1. Visualização da Sprite Sheet (5 sprites reais) vs. Cenário completo gerado.
+2. Execução passo a passo do Solver (destacando os 8 vizinhos e cada camada).
+3. Editor interativo + HUD de telemetria em tempo real (RAM via stat(0), CPU
+   via stat(1), FPS via stat(7), restrições avaliadas e chamadas sspr).
